@@ -31,6 +31,14 @@ h1,h2,h3{color:#17324d!important}h1{font-size:1.7rem!important;margin:.1rem 0 .2
 
 if "demo_db_ready" not in st.session_state:
     init_db()
+    _conn = get_connection()
+    try:
+        _count = _conn.execute("SELECT COUNT(*) FROM complaints").fetchone()[0]
+        if _count == 0:
+            from src.seed_data import seed
+            seed()
+    finally:
+        _conn.close()
     st.session_state.demo_db_ready = True
 if "demo_reviewed" not in st.session_state:
     st.session_state.demo_reviewed = set()
@@ -200,22 +208,23 @@ if workspace == "Overview & Complaints":
                 table.append({"Reference": row.get("reference_number") or "—", "Institution": _demo_name(row, orgs), "Category": row.get("category") or "—", "Bureau": row.get("bureau") or "—", "Status": row.get("status") or "Not recorded", "Received": row.get("date_received") or "—", "Age": f"{age} days unresolved" if _demo_unresolved(row) and age is not None else "—"})
             st.dataframe(table, use_container_width=True, hide_index=True, height=250)
             ref = st.selectbox("Inspect complaint and action history", [row["reference_number"] for row in visible], key="demo_complaint")
-            selected = next(row for row in visible if row["reference_number"] == ref)
-            details, timeline = st.columns([1, 2])
-            with details:
-                st.markdown("**Selected complaint**")
-                st.caption(_demo_name(selected, orgs))
-                st.write(f"**Status:** {selected.get('status') or 'Not recorded'}")
-                st.write(f"**Category:** {selected.get('category') or '—'}")
-                st.write(f"**Bureau:** {selected.get('bureau') or '—'}")
-                st.caption(selected.get("complaint_text") or "No description supplied.")
-            with timeline:
-                st.markdown(f"**Action history — {ref}**")
-                history = _demo_history(selected["id"])
-                if history:
-                    st.dataframe([{"Timestamp": item.get("created_at") or "—", "Action": item.get("action_type") or "—", "Note": item.get("description") or "—", "Actor": item.get("performed_by") or "—"} for item in history], use_container_width=True, hide_index=True, height=180)
-                else:
-                    st.caption("No action-history entries are recorded for this complaint.")
+            selected = next((row for row in visible if row["reference_number"] == ref), visible[0] if visible else None)
+            if selected:
+                details, timeline = st.columns([1, 2])
+                with details:
+                    st.markdown("**Selected complaint**")
+                    st.caption(_demo_name(selected, orgs))
+                    st.write(f"**Status:** {selected.get('status') or 'Not recorded'}")
+                    st.write(f"**Category:** {selected.get('category') or '—'}")
+                    st.write(f"**Bureau:** {selected.get('bureau') or '—'}")
+                    st.caption(selected.get("complaint_text") or "No description supplied.")
+                with timeline:
+                    st.markdown(f"**Action history — {selected.get('reference_number', ref)}**")
+                    history = _demo_history(selected["id"])
+                    if history:
+                        st.dataframe([{"Timestamp": item.get("created_at") or "—", "Action": item.get("action_type") or "—", "Note": item.get("description") or "—", "Actor": item.get("performed_by") or "—"} for item in history], use_container_width=True, hide_index=True, height=180)
+                    else:
+                        st.caption("No action-history entries are recorded for this complaint.")
 
 else:
     st.subheader("Potential matches")
@@ -243,42 +252,46 @@ else:
         else:
             options = [f"{item.complaint_id_a} ↔ {item.complaint_id_b} · {_demo_priority(item)} · {item.classification.title()}" for item in shown]
             choice = st.selectbox("Select a comparison", options, key="demo_match")
-            match = shown[options.index(choice)]
-            first = next(row for row in rows if row["reference_number"] == match.complaint_id_a)
-            second = next(row for row in rows if row["reference_number"] == match.complaint_id_b)
-            match_key = _demo_key(match)
-            a, b, score = st.columns([2, 2, 1.15])
-            for column, row, label in ((a, first, "Complaint A"), (b, second, "Complaint B")):
-                with column:
+            choice_idx = options.index(choice) if choice in options else 0
+            match = shown[choice_idx]
+            first = next((row for row in rows if row["reference_number"] == match.complaint_id_a), None)
+            second = next((row for row in rows if row["reference_number"] == match.complaint_id_b), None)
+            if not first or not second:
+                st.info("The selected comparison could not be loaded.")
+            else:
+                match_key = _demo_key(match)
+                a, b, score = st.columns([2, 2, 1.15])
+                for column, row, label in ((a, first, "Complaint A"), (b, second, "Complaint B")):
+                    with column:
+                        with st.container(border=True):
+                            st.caption(label)
+                            st.markdown(f"**{row['reference_number']}**")
+                            st.write(_demo_name(row, orgs))
+                            st.caption(f"{row.get('category') or '—'} · {row.get('bureau') or '—'} · {row.get('status') or 'Not recorded'}")
+                            st.text_area("Description", row.get("complaint_text") or "No description supplied.", height=180, disabled=True, key=f"demo_{label}_{row['reference_number']}")
+                with score:
                     with st.container(border=True):
-                        st.caption(label)
-                        st.markdown(f"**{row['reference_number']}**")
-                        st.write(_demo_name(row, orgs))
-                        st.caption(f"{row.get('category') or '—'} · {row.get('bureau') or '—'} · {row.get('status') or 'Not recorded'}")
-                        st.text_area("Description", row.get("complaint_text") or "No description supplied.", height=180, disabled=True, key=f"demo_{label}_{row['reference_number']}")
-            with score:
-                with st.container(border=True):
-                    st.caption("ADVISORY REVIEW")
-                    st.metric("Priority", _demo_priority(match))
-                    st.metric("Institution match", f"{match.institution_confidence:.0%}")
-                    st.metric("Issue-text similarity", f"{match.issue_confidence:.0%}")
-                    st.metric("Overall ranking", f"{match.overall_confidence:.0%}")
-                    st.caption(match.classification.title())
-            st.markdown(f"**Evidence summary:** {'; '.join(match.evidence[:2]) or 'No comparable evidence was supplied.'}")
-            with st.expander("Detailed matching evidence"):
-                for evidence in match.evidence:
-                    st.write(f"• {evidence}")
-            st.markdown(f'<div class="note"><b>Human review required:</b> {match.review_recommendation}</div>', unsafe_allow_html=True)
-            review, evidence = st.columns(2)
-            with review:
-                if st.button("Mark comparison reviewed (demo)", disabled=match_key in st.session_state.demo_reviewed, use_container_width=True):
-                    st.session_state.demo_reviewed.add(match_key)
-                    st.rerun()
-            with evidence:
-                if st.button("Record evidence examination (demo)", disabled=match_key in st.session_state.demo_evidence_seen, use_container_width=True):
-                    st.session_state.demo_evidence_seen.add(match_key)
-                    st.rerun()
-            st.caption("These non-persistent demo interactions do not approve, dismiss, merge, close, or otherwise change complaint records.")
+                        st.caption("ADVISORY REVIEW")
+                        st.metric("Priority", _demo_priority(match))
+                        st.metric("Institution match", f"{match.institution_confidence:.0%}")
+                        st.metric("Issue-text similarity", f"{match.issue_confidence:.0%}")
+                        st.metric("Overall ranking", f"{match.overall_confidence:.0%}")
+                        st.caption(match.classification.title())
+                st.markdown(f"**Evidence summary:** {'; '.join(match.evidence[:2]) or 'No comparable evidence was supplied.'}")
+                with st.expander("Detailed matching evidence"):
+                    for evidence in match.evidence:
+                        st.write(f"• {evidence}")
+                st.markdown(f'<div class="note"><b>Human review required:</b> {match.review_recommendation}</div>', unsafe_allow_html=True)
+                review, evidence = st.columns(2)
+                with review:
+                    if st.button("Mark comparison reviewed (demo)", disabled=match_key in st.session_state.demo_reviewed, use_container_width=True):
+                        st.session_state.demo_reviewed.add(match_key)
+                        st.rerun()
+                with evidence:
+                    if st.button("Record evidence examination (demo)", disabled=match_key in st.session_state.demo_evidence_seen, use_container_width=True):
+                        st.session_state.demo_evidence_seen.add(match_key)
+                        st.rerun()
+                st.caption("These non-persistent demo interactions do not approve, dismiss, merge, close, or otherwise change complaint records.")
 
 st.stop()
 

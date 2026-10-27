@@ -55,7 +55,10 @@ pip install -r requirements.txt
 # 4. Run tests to verify everything works
 python -m pytest tests/ -v
 
-# 5. Launch the dashboard
+# 5. Load synthetic demo data (also auto-loads on first launch if empty)
+python -m src.seed_data
+
+# 6. Launch the dashboard
 streamlit run app.py
 ```
 
@@ -82,10 +85,12 @@ SIH26264/
 ├── src/
 │   ├── __init__.py
 │   ├── database.py         # SQLite schema, connection helper, health check
+│   ├── relationship_detection.py # Explainable, deterministic relationship detection
 │   └── seed_data.py        # Synthetic dataset (institutions, complaints, actions)
 ├── tests/
 │   ├── __init__.py
 │   ├── test_database.py    # Verifies DB initialisation and health check
+│   ├── test_relationship_detection.py # Verifies matching heuristics and scenarios
 │   └── test_seed_data.py   # Verifies seed data, idempotency, test scenarios
 └── data/                   # Created at runtime — holds complaints.db
 ```
@@ -134,14 +139,13 @@ Tests use temporary databases and never touch `data/complaints.db`.
 - [x] Project scaffold and dependencies
 - [x] SQLite database schema (institutions, complaints, action history, relationships)
 - [x] Database health check
-- [x] Streamlit app with status indicator
-- [x] Automated tests
-- [ ] Complaint registration form
-- [ ] Search and filter
-- [ ] Institution resolution (name normalisation + identifier matching)
-- [ ] Issue relationship detection (text similarity)
-- [ ] Action history timeline
-- [ ] Reporting and export
+- [x] Streamlit app with government-oriented light theme
+- [x] Automated test suite (42 tests passing)
+- [x] Complaint monitoring & KPI metrics (unresolved, resolved, escalated, ageing)
+- [x] Complaint browser with search, multi-filter, and action-history timeline
+- [x] Explainable relationship detection (two-stage: institution resolution + text similarity)
+- [x] Potential match inspection with side-by-side evidence review
+- [x] Synthetic demonstration dataset with documented test scenarios
 
 ---
 

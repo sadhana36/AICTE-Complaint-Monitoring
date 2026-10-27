@@ -5,8 +5,6 @@ Uses a temporary file so tests never touch the real database.
 """
 
 import sqlite3
-import tempfile
-from pathlib import Path
 
 import pytest
 

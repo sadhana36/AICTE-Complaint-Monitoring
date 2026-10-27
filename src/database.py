@@ -15,7 +15,6 @@ Design notes:
 """
 
 import sqlite3
-import os
 from pathlib import Path
 
 # Default database location: data/complaints.db relative to project root.

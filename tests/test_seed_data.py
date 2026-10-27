@@ -8,12 +8,9 @@ Tests cover:
 - Data integrity: foreign keys, statuses, bureaus.
 """
 
-import sqlite3
-from pathlib import Path
-
 import pytest
 
-from src.database import init_db, get_connection
+from src.database import get_connection
 from src.seed_data import seed, INSTITUTIONS, COMPLAINTS, ACTION_HISTORY, SCENARIO_REFS
 
 
